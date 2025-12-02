@@ -72,14 +72,6 @@
       <!-- <el-form-item label="行文增强">
         <el-switch v-model="use_hw" />
       </el-form-item> -->
-      <!-- 表格样式 -->
-      <el-form-item label="表格样式">
-        <el-select v-model="tableStyle" placeholder="选择样式">
-          <el-option label="默认边框" value="default" />
-          <el-option label="简约无边框" value="no_border" />
-          <el-option label="条纹风格" value="striped" />
-        </el-select>
-      </el-form-item>
       <el-form-item label="导出密级">
         <el-select v-model="miji" placeholder="导出密级">
           <el-option label="公开" value="公开" />
@@ -166,7 +158,6 @@ const font_size = ref(14);
 const bold = ref(false);
 const italic = ref(false);
 const use_hw = ref(false);
-const tableStyle = ref("");
 const header = ref("");
 const file_type = ref("docx");
 const line_spacingType = ref("exact");
@@ -272,7 +263,6 @@ function submit() {
     bold: bold.value,
     italic: italic.value,
     use_hw: use_hw.value,
-    tableStyle: tableStyle.value,
     header: header.value,
     file_type: file_type.value,
     line_spacing: {
