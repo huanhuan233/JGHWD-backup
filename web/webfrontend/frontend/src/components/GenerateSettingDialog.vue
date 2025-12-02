@@ -99,6 +99,17 @@
           <el-option label="pdf" value="pdf" />
         </el-select>
       </el-form-item>
+      <!-- 目录层级 -->
+      <el-form-item label="目录最大层级">
+        <el-select v-model="toc_max_level" placeholder="选择目录层级">
+          <el-option
+            v-for="level in tocLevelOptions"
+            :key="level"
+            :label="`${level}级`"
+            :value="level"
+          />
+        </el-select>
+      </el-form-item>
       <el-form-item label="行距">
         <el-select v-model="line_spacingType" placeholder="行距">
           <el-option label="单倍" value="single" />
@@ -162,7 +173,11 @@ const header = ref("");
 const file_type = ref("docx");
 const line_spacingType = ref("exact");
 const line_spacingValue = ref(12);
+const toc_max_level = ref(2);
 const customPrompt = ref("");
+
+// 目录层级选项（1-10）
+const tocLevelOptions = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 // 常用 Word 字体
 // const fontOptions = [
@@ -273,6 +288,7 @@ function submit() {
           ? line_spacingValue.value
           : null,
     },
+    toc_max_level: toc_max_level.value,
   });
 }
 const fetchModelOptions = async () => {

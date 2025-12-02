@@ -180,6 +180,7 @@ def parse_export(request):
         content_lines = data.get('content_lines')
         line_spacing = data.get('line_spacing')
         title_setting = data.get('title_setting')
+        toc_max_level = int(data.get('toc_max_level', 2))  # 默认2级
         file_type = data.get('file_type', 'docx').lower()
 
         # 验证文件类型
@@ -220,7 +221,12 @@ def parse_export(request):
 
         all_headings = generator.get_all_heading();
         print("获取到所有一级标题：", all_headings)
-        generator.match_headings(title_setting, all_headings)    
+        generator.match_headings(title_setting, all_headings)
+        
+        # 在文档开头添加目录
+        if toc_max_level > 0:
+            generator.add_table_of_contents(toc_max_level, font_name)
+        
         print("开始保存文档...")    
         return generator.save()
         

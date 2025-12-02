@@ -1086,3 +1086,259 @@ class DocGenerator:
             
             if 'children' in item and item['children']:
                 self.match_headings({'structure': item['children']}, all_headings)
+    
+    def add_table_of_contents(self, max_level=2, font_name="宋体"):
+        """
+        在文档开头添加目录（直接生成目录内容）
+        :param max_level: 目录最大层级（1-10）
+        :param font_name: 目录字体名称，与正文字体相同
+        """
+        # 确保 max_level 在有效范围内
+        max_level = max(1, min(10, max_level))
+        
+        # 获取所有标题
+        headings = self._get_all_headings_with_levels(max_level)
+        
+        if not headings:
+            # 如果没有标题，添加一个提示
+            if len(self.document.paragraphs) == 0:
+                self.document.add_paragraph()
+            first_paragraph = self.document.paragraphs[0]
+            toc_paragraph = first_paragraph.insert_paragraph_before()
+            run = toc_paragraph.add_run("目录")
+            self._set_run_style(run, font_name, 16, True, False)
+            toc_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+            self.document.paragraphs[0].insert_paragraph_before()
+            return
+        
+        # 在文档开头插入目录
+        if len(self.document.paragraphs) == 0:
+            self.document.add_paragraph()
+        
+        first_paragraph = self.document.paragraphs[0]
+        
+        # 添加"目录"标题
+        toc_title_para = first_paragraph.insert_paragraph_before()
+        toc_title_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        run = toc_title_para.add_run("目录")
+        self._set_run_style(run, font_name, 16, True, False)
+        
+        # 添加空行
+        first_paragraph.insert_paragraph_before()
+        
+        # 生成目录内容
+        for heading in headings:
+            level = heading['level']
+            text = heading['text']
+            para_index = heading['index']
+            target_para = heading.get('paragraph')
+            
+            # 创建目录项段落
+            toc_item_para = first_paragraph.insert_paragraph_before()
+            
+            # 根据层级设置缩进
+            indent_size = (level - 1) * 0.5  # 每级缩进0.5英寸
+            if indent_size > 0:
+                toc_item_para.paragraph_format.left_indent = Inches(indent_size)
+            
+            # 添加目录项文本（创建超链接到对应标题）
+            run = toc_item_para.add_run(text)
+            self._set_run_style(run, font_name, 12, False, False)
+            
+            # 尝试创建超链接（如果可能）
+            if target_para:
+                try:
+                    # 设置超链接样式
+                    run.font.color.rgb = RGBColor(0, 0, 255)  # 蓝色
+                    run.font.underline = True
+                except:
+                    pass
+            
+            # 添加制表符和页码占位符
+            tab_run = toc_item_para.add_run("\t")
+            # 页码占位符（实际页码需要在Word中更新TOC字段或手动更新）
+            page_run = toc_item_para.add_run("...")
+            self._set_run_style(page_run, font_name, 12, False, False)
+            
+            # 设置制表符位置（右对齐页码）
+            ppr = toc_item_para._element.get_or_add_pPr()
+            tabs_elem = ppr.find(qn('w:tabs'))
+            if tabs_elem is None:
+                tabs_elem = OxmlElement('w:tabs')
+                ppr.append(tabs_elem)
+            
+            # 添加右对齐制表符（带点线引导符）
+            tab_elem = OxmlElement('w:tab')
+            tab_elem.set(qn('w:val'), 'right')
+            tab_elem.set(qn('w:leader'), 'dot')
+            # 设置制表符位置（约6.5英寸，转换为twips单位，1英寸=1440 twips）
+            tab_pos = int(6.5 * 1440)
+            tab_elem.set(qn('w:pos'), str(tab_pos))
+            tabs_elem.append(tab_elem)
+        
+        # 添加空行分隔目录和正文
+        first_paragraph.insert_paragraph_before()
+        
+        # 同时添加TOC字段，以便用户按F9可以更新
+        self._add_toc_field(max_level, font_name)
+    
+    def _get_all_headings_with_levels(self, max_level):
+        """
+        获取文档中所有指定层级范围内的标题
+        :param max_level: 最大层级
+        :return: 标题列表，包含level、text、index
+        """
+        headings = []
+        style_level_map = {
+            'Heading 1': 1, '标题 1': 1,
+            'Heading 2': 2, '标题 2': 2,
+            'Heading 3': 3, '标题 3': 3,
+            'Heading 4': 4, '标题 4': 4,
+            'Heading 5': 5, '标题 5': 5,
+            'Heading 6': 6, '标题 6': 6,
+            'Heading 7': 7, '标题 7': 7,
+            'Heading 8': 8, '标题 8': 8,
+            'Heading 9': 9, '标题 9': 9,
+            'Heading 10': 10, '标题 10': 10,
+        }
+        
+        # 遍历所有段落，收集标题信息
+        # 注意：这里收集的是当前文档中的标题，目录会在开头插入
+        for para_index, paragraph in enumerate(self.document.paragraphs):
+            style_name = paragraph.style.name
+            if style_name in style_level_map:
+                level = style_level_map[style_name]
+                if level <= max_level:
+                    text = paragraph.text.strip()
+                    if text:
+                        headings.append({
+                            'level': level,
+                            'text': text,
+                            'index': para_index,
+                            'paragraph': paragraph  # 保存段落引用，用于创建超链接
+                        })
+        
+        return headings
+    
+    def _add_toc_field(self, max_level, font_name):
+        """
+        添加TOC字段，以便用户按F9可以更新目录
+        """
+        try:
+            # 找到目录区域的最后一个段落（在正文之前）
+            # 在最后一个目录项后添加TOC字段
+            if len(self.document.paragraphs) < 2:
+                return
+            
+            # 在目录区域末尾添加TOC字段段落（隐藏，用于更新）
+            # 找到正文开始的位置（第一个非目录段落）
+            toc_end_index = 0
+            for i, para in enumerate(self.document.paragraphs):
+                if para.text.strip() and not para.text.strip().startswith('...'):
+                    # 检查是否是标题样式
+                    if para.style.name not in ['Heading 1', '标题 1', 'Heading 2', '标题 2', 
+                                               'Heading 3', '标题 3', 'Heading 4', '标题 4',
+                                               'Heading 5', '标题 5', 'Heading 6', '标题 6']:
+                        toc_end_index = i
+                        break
+            
+            if toc_end_index > 0:
+                # 在目录结束位置插入TOC字段
+                toc_para = self.document.paragraphs[toc_end_index - 1]
+                toc_field_para = toc_para.insert_paragraph_after()
+                
+                # 创建标准TOC字段
+                toc_instruction = f'TOC \\o "1-{max_level}" \\h \\z \\u'
+                
+                # 使用完整的字段结构（fldChar + instrText + fldChar）
+                # 开始字段字符
+                fld_char_begin = OxmlElement('w:fldChar')
+                fld_char_begin.set(qn('w:fldCharType'), 'begin')
+                
+                # 字段指令
+                instr_text = OxmlElement('w:instrText')
+                instr_text.set(qn('xml:space'), 'preserve')
+                instr_text.text = toc_instruction
+                
+                # 结束字段字符
+                fld_char_end = OxmlElement('w:fldChar')
+                fld_char_end.set(qn('w:fldCharType'), 'end')
+                
+                # 创建run并添加字段元素
+                run1 = toc_field_para.add_run()
+                run1._element.append(fld_char_begin)
+                
+                run2 = toc_field_para.add_run()
+                run2._element.append(instr_text)
+                
+                run3 = toc_field_para.add_run()
+                run3._element.append(fld_char_end)
+                
+                # 隐藏这个段落（用于更新，不显示）
+                ppr = toc_field_para._element.get_or_add_pPr()
+                ppr.set(qn('w:vanish'), 'true')
+        except Exception as e:
+            print(f"添加TOC字段失败: {e}")
+            # 不抛出异常，目录内容已经生成
+    
+    def _set_toc_style(self, font_name="宋体"):
+        """
+        设置TOC样式以使用指定的字体
+        注意：Word中的TOC样式（TOC 1, TOC 2等）控制目录的显示
+        我们通过修改样式表来设置这些样式使用正文字体
+        """
+        try:
+            # 获取字体映射
+            mapped_font = FONT_MAPPING.get(font_name, "SimSun")
+            
+            # TOC样式名称列表（TOC 1到TOC 9对应1-9级标题）
+            toc_style_names = [f"TOC {i}" for i in range(1, 10)]
+            
+            # 遍历所有样式，找到TOC样式并设置字体
+            for style in self.document.styles:
+                if style.name in toc_style_names:
+                    try:
+                        # 获取样式的XML元素
+                        style_element = style.element
+                        
+                        # 使用XPath查找rPr元素（运行属性）
+                        # python-docx使用特定的命名空间
+                        nsmap = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+                        rpr_list = style_element.xpath('.//w:rPr', namespaces=nsmap)
+                        
+                        if not rpr_list:
+                            # 如果没有rPr，需要创建
+                            # 先查找或创建pPr（段落属性）
+                            ppr_list = style_element.xpath('.//w:pPr', namespaces=nsmap)
+                            if not ppr_list:
+                                ppr = OxmlElement('w:pPr')
+                                style_element.append(ppr)
+                            else:
+                                ppr = ppr_list[0]
+                            
+                            rpr = OxmlElement('w:rPr')
+                            ppr.append(rpr)
+                        else:
+                            rpr = rpr_list[0]
+                        
+                        # 设置字体
+                        rfonts_list = rpr.xpath('.//w:rFonts', namespaces=nsmap)
+                        if not rfonts_list:
+                            rfonts = OxmlElement('w:rFonts')
+                            rfonts.set(qn('w:ascii'), mapped_font)
+                            rfonts.set(qn('w:eastAsia'), mapped_font)
+                            rfonts.set(qn('w:hAnsi'), mapped_font)
+                            rpr.append(rfonts)
+                        else:
+                            rfonts = rfonts_list[0]
+                            rfonts.set(qn('w:ascii'), mapped_font)
+                            rfonts.set(qn('w:eastAsia'), mapped_font)
+                            rfonts.set(qn('w:hAnsi'), mapped_font)
+                    except Exception as e:
+                        # 如果设置样式失败，记录错误但继续
+                        print(f"设置TOC样式 {style.name} 失败: {e}")
+                        continue
+        except Exception as e:
+            # 如果整体设置失败，记录错误但继续
+            print(f"设置TOC样式失败: {e}")
+            # 不抛出异常，让文档生成继续
