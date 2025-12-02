@@ -1,0 +1,17 @@
+{
+  "type": "dify",
+  "api_key": "12345678",
+  "method": "POST",
+  "url": "http://host.docker.internal:8080/v1/completion-messages",
+  "headers": {
+    "Authorization": "Bearer 12345678",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "inputs": {
+      "query": "请输入您的问题"
+    },
+    "response_mode": "streaming",
+    "user": "abc-123"
+  }
+}

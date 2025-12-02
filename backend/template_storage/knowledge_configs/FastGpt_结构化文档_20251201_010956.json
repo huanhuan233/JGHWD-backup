@@ -1,0 +1,20 @@
+{
+  "type": "FastGpt",
+  "api_key": "fastgpt-nZLwu9fD5nniH1yju2tISszleNSIrurV5HhxYHoPr8oMTsFh4m1ngeR6BwddC92K",
+  "method": "POST",
+  "url": "http://host.docker.internal:3000/v1/chat/completions",
+  "headers": {
+    "Authorization": "Bearer fastgpt-nZLwu9fD5nniH1yju2tISszleNSIrurV5HhxYHoPr8oMTsFh4m1ngeR6BwddC92K",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "stream": false,
+    "detail": false,
+    "messages": [
+      {
+        "content": "请输入您的问题",
+        "role": "user"
+      }
+    ]
+  }
+}

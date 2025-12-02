@@ -1,0 +1,26 @@
+@import './base.css';
+
+/* 让应用整体撑满页面，避免横向滚动 */
+html, body, #app {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100vh;
+  font-weight: normal;
+  overflow-x: hidden;
+}
+
+/* 你可以保留这类样式 */
+a,
+.green {
+  text-decoration: none;
+  color: #40E0D0;
+  transition: 0.4s;
+  padding: 3px;
+}
+
+@media (hover: hover) {
+  a:hover {
+    background-color: #40E0D0;
+  }
+}
