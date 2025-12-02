@@ -757,9 +757,16 @@ class DocGenerator:
         
         run.font.size = Pt(font_size)
         run.font.italic = italic
+        
+        # 设置颜色（默认为黑色）
         if color is not None:
             # font_color是RGBColor对象（如RGBColor(255,0,0)）
             run.font.color.rgb = color
+        else:
+            run.font.color.rgb = RGBColor(0, 0, 0)  # 默认黑色
+        
+        # 确保无下划线
+        run.font.underline = None
 
     def add_heading(self, text, level=1):
         """修复标题加粗问题 - 重新实现确保加粗生效"""
@@ -775,6 +782,24 @@ class DocGenerator:
             paragraph.style = self.document.styles['Heading 3']
         else:
             paragraph.style = self.document.styles['Heading 4']
+        
+        # 修改样式定义本身，确保样式不包含keepNext和keepLines
+        try:
+            style = paragraph.style
+            style_element = style.element
+            ppr_style = style_element.find(qn('w:pPr'))
+            if ppr_style is not None:
+                # 移除样式中的keepNext
+                keep_next_style = ppr_style.find(qn('w:keepNext'))
+                if keep_next_style is not None:
+                    ppr_style.remove(keep_next_style)
+                # 移除样式中的keepLines
+                keep_lines_style = ppr_style.find(qn('w:keepLines'))
+                if keep_lines_style is not None:
+                    ppr_style.remove(keep_lines_style)
+        except Exception as e:
+            print(f"修改样式定义失败: {e}")
+            # 继续执行，段落级别的设置仍然有效
         
         # 清除现有runs
         for run in paragraph.runs:
@@ -811,6 +836,41 @@ class DocGenerator:
         
         # 设置段落对齐
         paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+        
+        # 设置段落格式：段前0磅，取消"与下段同页"和"段中不分页"
+        para_format = paragraph.paragraph_format
+        para_format.space_before = Pt(0)  # 段前0磅
+        para_format.space_after = Pt(0)   # 段后0磅（可选）
+        
+        # 获取段落属性元素
+        ppr = paragraph._element.get_or_add_pPr()
+        
+        # 强制取消"与下段同页"（keepNext）- 先删除再显式设置为false
+        keep_next = ppr.find(qn('w:keepNext'))
+        if keep_next is not None:
+            ppr.remove(keep_next)
+        # 显式设置为false
+        keep_next_elem = OxmlElement('w:keepNext')
+        keep_next_elem.set(qn('w:val'), 'false')
+        ppr.append(keep_next_elem)
+        
+        # 强制取消"段中不分页"（keepLines）- 先删除再显式设置为false
+        keep_lines = ppr.find(qn('w:keepLines'))
+        if keep_lines is not None:
+            ppr.remove(keep_lines)
+        # 显式设置为false
+        keep_lines_elem = OxmlElement('w:keepLines')
+        keep_lines_elem.set(qn('w:val'), 'false')
+        ppr.append(keep_lines_elem)
+        
+        # 确保widowControl设置为false（段中不分页相关）
+        widow_control = ppr.find(qn('w:widowControl'))
+        if widow_control is not None:
+            widow_control.set(qn('w:val'), 'false')
+        else:
+            widow_control_elem = OxmlElement('w:widowControl')
+            widow_control_elem.set(qn('w:val'), 'false')
+            ppr.append(widow_control_elem)
         
         return paragraph
 
@@ -1082,6 +1142,40 @@ class DocGenerator:
                                 current_italic,
                                 font_color  
                             )
+                        
+                        # 设置段落格式：段前0磅，取消"与下段同页"和"段中不分页"
+                        para_format = paragraph.paragraph_format
+                        para_format.space_before = Pt(0)  # 段前0磅
+                        
+                        # 获取段落属性元素
+                        ppr = paragraph._element.get_or_add_pPr()
+                        
+                        # 强制取消"与下段同页"（keepNext）
+                        keep_next = ppr.find(qn('w:keepNext'))
+                        if keep_next is not None:
+                            ppr.remove(keep_next)
+                        # 显式设置为false
+                        keep_next_elem = OxmlElement('w:keepNext')
+                        keep_next_elem.set(qn('w:val'), 'false')
+                        ppr.append(keep_next_elem)
+                        
+                        # 强制取消"段中不分页"（keepLines）
+                        keep_lines = ppr.find(qn('w:keepLines'))
+                        if keep_lines is not None:
+                            ppr.remove(keep_lines)
+                        # 显式设置为false
+                        keep_lines_elem = OxmlElement('w:keepLines')
+                        keep_lines_elem.set(qn('w:val'), 'false')
+                        ppr.append(keep_lines_elem)
+                        
+                        # 确保widowControl设置为false
+                        widow_control = ppr.find(qn('w:widowControl'))
+                        if widow_control is not None:
+                            widow_control.set(qn('w:val'), 'false')
+                        else:
+                            widow_control_elem = OxmlElement('w:widowControl')
+                            widow_control_elem.set(qn('w:val'), 'false')
+                            ppr.append(widow_control_elem)
             
             
             if 'children' in item and item['children']:
@@ -1141,24 +1235,36 @@ class DocGenerator:
             if indent_size > 0:
                 toc_item_para.paragraph_format.left_indent = Inches(indent_size)
             
-            # 添加目录项文本（创建超链接到对应标题）
+            # 添加目录项文本（黑色字体，无下划线）
             run = toc_item_para.add_run(text)
-            self._set_run_style(run, font_name, 12, False, False)
+            self._set_run_style(run, font_name, 12, False, False, RGBColor(0, 0, 0))  # 黑色
             
-            # 尝试创建超链接（如果可能）
+            # 添加制表符
+            toc_item_para.add_run("\t")
+            
+            # 为标题段落添加书签，以便PAGEREF字段引用
             if target_para:
                 try:
-                    # 设置超链接样式
-                    run.font.color.rgb = RGBColor(0, 0, 255)  # 蓝色
-                    run.font.underline = True
-                except:
-                    pass
-            
-            # 添加制表符和页码占位符
-            tab_run = toc_item_para.add_run("\t")
-            # 页码占位符（实际页码需要在Word中更新TOC字段或手动更新）
-            page_run = toc_item_para.add_run("...")
-            self._set_run_style(page_run, font_name, 12, False, False)
+                    # 创建书签名称（基于标题文本，清理特殊字符）
+                    bookmark_name = f"_Toc{para_index}_{level}"
+                    # 在目标标题段落添加书签
+                    self._add_bookmark_to_paragraph(target_para, bookmark_name)
+                    
+                    # 添加PAGEREF字段来引用标题页码
+                    page_run = toc_item_para.add_run()
+                    self._add_pageref_field(page_run, bookmark_name)
+                    
+                    # 设置页码字体为黑色
+                    self._set_run_style(page_run, font_name, 12, False, False, RGBColor(0, 0, 0))
+                except Exception as e:
+                    # 如果添加书签失败，使用占位符
+                    print(f"添加页码字段失败: {e}")
+                    page_run = toc_item_para.add_run("...")
+                    self._set_run_style(page_run, font_name, 12, False, False, RGBColor(0, 0, 0))
+            else:
+                # 如果没有目标段落，使用占位符
+                page_run = toc_item_para.add_run("...")
+                self._set_run_style(page_run, font_name, 12, False, False, RGBColor(0, 0, 0))
             
             # 设置制表符位置（右对齐页码）
             ppr = toc_item_para._element.get_or_add_pPr()
@@ -1342,3 +1448,71 @@ class DocGenerator:
             # 如果整体设置失败，记录错误但继续
             print(f"设置TOC样式失败: {e}")
             # 不抛出异常，让文档生成继续
+    
+    def _add_bookmark_to_paragraph(self, paragraph, bookmark_name):
+        """
+        为段落添加书签
+        """
+        try:
+            # 获取段落元素
+            para_elem = paragraph._element
+            
+            # 创建唯一的书签ID（使用简单的计数器或基于名称的哈希）
+            bookmark_id = str(abs(hash(bookmark_name)) % 100000)
+            
+            # 查找或创建书签开始标记
+            bookmark_start = OxmlElement('w:bookmarkStart')
+            bookmark_start.set(qn('w:id'), bookmark_id)
+            bookmark_start.set(qn('w:name'), bookmark_name)
+            
+            bookmark_end = OxmlElement('w:bookmarkEnd')
+            bookmark_end.set(qn('w:id'), bookmark_id)
+            
+            # 在段落开头插入书签（在第一个run之前）
+            if paragraph.runs:
+                first_run = paragraph.runs[0]
+                first_run._element.addprevious(bookmark_start)
+            else:
+                # 如果没有run，创建一个空的run
+                run = paragraph.add_run()
+                run._element.addprevious(bookmark_start)
+            
+            # 在段落末尾添加书签结束标记
+            para_elem.append(bookmark_end)
+        except Exception as e:
+            print(f"添加书签失败: {e}")
+            raise
+    
+    def _add_pageref_field(self, run, bookmark_name):
+        """
+        添加PAGEREF字段来引用书签的页码
+        """
+        try:
+            # 创建PAGEREF字段
+            fld_char_begin = OxmlElement('w:fldChar')
+            fld_char_begin.set(qn('w:fldCharType'), 'begin')
+            
+            instr_text = OxmlElement('w:instrText')
+            instr_text.set(qn('xml:space'), 'preserve')
+            instr_text.text = f'PAGEREF {bookmark_name} \\h'
+            
+            fld_char_sep = OxmlElement('w:fldChar')
+            fld_char_sep.set(qn('w:fldCharType'), 'separate')
+            
+            # 添加页码占位文本
+            fld_char_text = OxmlElement('w:t')
+            fld_char_text.text = '1'  # 占位文本，Word会自动更新为实际页码
+            
+            fld_char_end = OxmlElement('w:fldChar')
+            fld_char_end.set(qn('w:fldCharType'), 'end')
+            
+            # 添加到run元素
+            run._element.append(fld_char_begin)
+            run._element.append(instr_text)
+            run._element.append(fld_char_sep)
+            run._element.append(fld_char_text)
+            run._element.append(fld_char_end)
+        except Exception as e:
+            print(f"添加PAGEREF字段失败: {e}")
+            # 如果失败，添加占位文本
+            run.text = "..."
