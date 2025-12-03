@@ -177,6 +177,47 @@ watch(
   { immediate: true }
 );
 
+// ✅ 监听编辑状态，当结束编辑时自动保存
+watch(isUpdate, async (newVal, oldVal) => {
+  // 当从编辑状态切换到非编辑状态时，保存修改
+  if (oldVal === true && newVal === false && selectedArticle.value) {
+    // 同步更新selectedArticle的structure
+    if (selectedArticle.value.structure) {
+      strippedSections.value.forEach((section: Section) => {
+        const originalSection = selectedArticle.value!.structure.find(
+          (s: Section) => s.id === section.id
+        );
+        if (originalSection) {
+          originalSection.content = section.content;
+        }
+      });
+      
+      // 保存到数据库
+      try {
+        const res = await fetch(
+          API.BASE_URL + `/outlines/${selectedArticle.value.id}/`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: "Token " + localStorage.getItem("token"),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              id: selectedArticle.value.id,
+              structure: selectedArticle.value.structure,
+            }),
+          }
+        );
+        if (res.ok) {
+          console.log("✅ 已自动保存修改");
+        }
+      } catch (err) {
+        console.warn("⚠️ 自动保存失败:", err);
+      }
+    }
+  }
+});
+
 const handleDelete = async (id: number) => {
   ElMessage.success("删除成功");
   const res = await fetch(API.BASE_URL + `/contents/delete_content/${id}`,{headers:{Authorization: "Token " + localStorage.getItem("token"),}});
@@ -187,6 +228,13 @@ const handleDelete = async (id: number) => {
   }
 };
 const handleGenerate = async (settings: any) => {
+  // ✅ 如果正在编辑，先结束编辑并保存
+  if (isUpdate.value) {
+    isUpdate.value = false;
+    // 等待watch触发保存
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  
   // 显示加载状态
   const loadingInstance = ElLoading.service({
     lock: true,
@@ -195,13 +243,58 @@ const handleGenerate = async (settings: any) => {
   });
   console.log("✅ 获取到的生成设置参数：", settings);
 
+  // ✅ 先保存所有修改的内容到数据库
+  if (selectedArticle.value && strippedSections.value.length > 0) {
+    try {
+      // 更新本地selectedArticle的structure
+      if (selectedArticle.value.structure) {
+        strippedSections.value.forEach((section: Section, idx: number) => {
+          const originalSection = selectedArticle.value!.structure.find(
+            (s: Section) => s.id === section.id
+          );
+          if (originalSection) {
+            originalSection.content = section.content;
+          } else if (selectedArticle.value!.structure[idx]) {
+            selectedArticle.value!.structure[idx].content = section.content;
+          }
+        });
+      }
+      
+      // 保存到数据库
+      const saveRes = await fetch(
+        API.BASE_URL + `/outlines/${selectedArticle.value.id}/`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: "Token " + localStorage.getItem("token"),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            id: selectedArticle.value.id,
+            structure: selectedArticle.value.structure,
+          }),
+        }
+      );
+      
+      if (saveRes.ok) {
+        console.log("✅ 已保存所有修改到数据库");
+      } else {
+        console.warn("⚠️ 保存修改失败，但继续导出");
+      }
+    } catch (err) {
+      console.warn("⚠️ 保存修改时出错，但继续导出:", err);
+    }
+  }
+
   // 在这里调用生成 Word 文档的逻辑
   // 可以将 settings 和 selectedArticle 一起传给 API 或 Word 导出模块
   // exportToWordWithSettings(settings);
   // settings.section_outline = section_outline.value;
   // settings.section_title = section_title.value;
-  settings.content_lines = content_lines.value;
-  settings.title_setting=title_setting.value
+  // ✅ 传递outline_id，让后端从数据库读取最新内容
+  settings.outline_id = selectedArticle.value?.id;
+  settings.content_lines = content_lines.value; // 保留作为备选
+  settings.title_setting = title_setting.value;
   // delete settings.miji;
   let data = settings;
   try {

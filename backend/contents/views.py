@@ -182,12 +182,39 @@ def parse_export(request):
         title_setting = data.get('title_setting')
         toc_max_level = int(data.get('toc_max_level', 2))  # 默认2级
         file_type = data.get('file_type', 'docx').lower()
+        outline_id = data.get('outline_id')  # 新增：接收大纲ID
 
         # 验证文件类型
         if file_type not in ['docx', 'pdf']:
             return JsonResponse({'success': False, 'error': '不支持的文件类型'}, status=400)
-        print("Received content_lines:", data.get('content_lines'))
-        full_content = content_lines
+        
+        # ✅ 优先从数据库读取最新内容
+        if outline_id:
+            try:
+                outline = Outline.objects.get(id=outline_id, user=request.user)
+                # 从数据库中的structure提取所有content，确保使用最新数据
+                if outline.structure:
+                    content_parts = []
+                    for section in outline.structure:
+                        content = section.get('content', '')
+                        if content:
+                            content_parts.append(content)
+                    full_content = '\n\n'.join(content_parts)
+                    print(f"✅ 从数据库读取最新内容，大纲ID: {outline_id}, 段落数: {len(content_parts)}")
+                else:
+                    # 如果structure为空，使用前端传递的内容作为备选
+                    full_content = content_lines or ''
+                    print("⚠️ 数据库structure为空，使用前端传递的内容")
+            except Outline.DoesNotExist:
+                # 如果找不到大纲，使用前端传递的内容
+                full_content = content_lines or ''
+                print("⚠️ 未找到对应大纲，使用前端传递的内容")
+        else:
+            # 如果没有提供outline_id，使用前端传递的内容
+            full_content = content_lines or ''
+            print("⚠️ 未提供outline_id，使用前端传递的内容")
+        
+        print("📄 最终使用的文档内容长度:", len(full_content) if full_content else 0)
         # 创建文档生成器
         generator = DocGenerator(content_format=file_type)
         # 设置表格样式
